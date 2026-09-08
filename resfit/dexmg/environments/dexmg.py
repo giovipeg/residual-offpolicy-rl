@@ -53,6 +53,11 @@ ENV_ROBOTS = {
     "PickPlaceCan": ["Panda"],
     # Square task -- implemented in robosuite as `NutAssemblySquare`
     "NutAssemblySquare": ["Panda"],
+    # ------------------------------------------------------------------
+    # External tasks (registered by importing their own package)
+    # ------------------------------------------------------------------
+    # Cube-to-container pick-and-place -- single Panda arm, from `simple_env`
+    "CubeToContainer": ["Panda"],
 }
 # Create a named logger
 logger = logging.getLogger(__name__)
@@ -140,6 +145,7 @@ class RobosuiteGymWrapper:
             "TwoArmThreePieceAssembly": 500,
             "TwoArmThreading": 300,
             "TwoArmCanSortRandom": 400,
+            "CubeToContainer": 220,
         }.get(env_name, 1000)
 
         # Add Gymnasium-required attributes
@@ -167,6 +173,9 @@ class RobosuiteGymWrapper:
             "TwoArmCanSortRandom",
         ]:
             import dexmimicgen  # noqa: F401, PLC0415
+
+        if env_name == "CubeToContainer":
+            import simple_env  # noqa: F401, PLC0415  (registers CubeToContainer)
 
         robots = ENV_ROBOTS[env_name]
 
@@ -433,7 +442,7 @@ class RobosuiteGymWrapper:
             return humanoid_image_keys
 
         # Single-arm Panda tasks (Lift, Can, Square, Threading, etc.) --------
-        if env_lower in {"lift", "can", "pickplacecan", "square", "nutassemblysquare", "threading"}:
+        if env_lower in {"lift", "can", "pickplacecan", "square", "nutassemblysquare", "threading", "cubetocontainer"}:
             return panda_image_keys_single
 
         # Fallback to two-arm Panda cameras --------------------------------
@@ -471,7 +480,7 @@ class RobosuiteGymWrapper:
             return humanoid_low_dim_keys
 
         # Single-arm Panda tasks
-        if env_lower in {"lift", "can", "pickplacecan", "square", "nutassemblysquare", "threading"}:
+        if env_lower in {"lift", "can", "pickplacecan", "square", "nutassemblysquare", "threading", "cubetocontainer"}:
             return panda_low_dim_keys_single
 
         # Default: two-arm Panda

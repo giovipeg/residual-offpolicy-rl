@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Task table for residual TD3. One entry per task; each becomes a dataclass in",
+    "resfit/rl_finetuning/config/residual_td3.py, generated on demand by",
+    "giovi/scripts/ensure_task_config.py. Add a task here rather than editing",
+    "ResFiT's config module by hand.",
+    "",
+    "Class and Hydra names are derived from the task key:",
+    "  CubeToContainer -> ResidualTD3CubeToContainerConfig",
+    "                  -> --config-name=residual_td3_cube_to_container_config",
+    "",
+    "Every field except `dataset` is optional; anything omitted keeps the",
+    "ResidualTD3DexmgConfig default. `base_policy` is deliberately absent -- the",
+    "wandb_project/run_id of the BC run is written into the generated class by",
+    "the launch script, per the README."
+  ],
+
+  "CubeToContainer": {
+    "description": "Single-arm Panda pick-and-place, registered by the `simple_env` package.",
+    "dataset": "giovipeg/cube-to-container",
+    "num_episodes": 200,
+    "wandb_project": "cube-to-container-residual-td3",
+    "video_key": "observation.images.agentview",
+    "rl_camera": [
+      "observation.images.agentview",
+      "observation.images.robot0_eye_in_hand"
+    ]
+  }
+}

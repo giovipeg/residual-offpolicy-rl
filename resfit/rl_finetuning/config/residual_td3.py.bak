@@ -264,43 +264,6 @@ class ResidualTD3TwoArmCanSortConfig(ResidualTD3BoxCleanConfig):
     )
 
 
-@dataclass
-class ResidualTD3CubeToContainerConfig(ResidualTD3DexmgConfig):
-    """Single-arm Panda pick-and-place, registered by the `simple_env` package.
-
-    Generated from giovi/configs/residual_td3_tasks.json by giovi/scripts/ensure_task_config.py --
-    edit the task table and rerun rather than editing this class.
-    """
-
-    task: str = "CubeToContainer"
-
-    video_key: str = "observation.images.agentview"
-
-    rl_camera: list[str] = field(
-        default_factory=lambda: [
-            "observation.images.agentview",
-            "observation.images.robot0_eye_in_hand",
-        ]
-    )
-
-    offline_data: OfflineDataConfig = field(
-        default_factory=lambda: OfflineDataConfig(
-            name="giovipeg/cube-to-container",
-            num_episodes=200,
-        )
-    )
-
-    base_policy: BasePolicyConfig = field(
-        default_factory=lambda: BasePolicyConfig(
-            wandb_id="dexmg-bc/fnqe3s6y",
-        )
-    )
-
-    wandb: WandBConfig = field(
-        default_factory=lambda: WandBConfig(project="cube-to-container-residual-td3")
-    )
-
-
 # -----------------------------------------------------------------------------
 # Register with Hydra
 # -----------------------------------------------------------------------------
@@ -311,4 +274,3 @@ cs.store(name="residual_td3_square_config", node=ResidualTD3SquareConfig)
 cs.store(name="residual_td3_box_clean_config", node=ResidualTD3BoxCleanConfig)
 cs.store(name="residual_td3_coffee_config", node=ResidualTD3CoffeeConfig)
 cs.store(name="residual_td3_two_arm_cansort_config", node=ResidualTD3TwoArmCanSortConfig)
-cs.store(name="residual_td3_cube_to_container_config", node=ResidualTD3CubeToContainerConfig)

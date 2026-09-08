@@ -37,12 +37,7 @@ from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from omegaconf import OmegaConf
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
-from torchrl.data import (
-    LazyTensorStorage,
-    ReplayBuffer,
-    TensorDictPrioritizedReplayBuffer,
-    TensorDictReplayBuffer,
-)
+from torchrl.data import LazyTensorStorage, ReplayBuffer, TensorDictPrioritizedReplayBuffer
 from tqdm import tqdm
 
 import wandb
@@ -147,27 +142,6 @@ os.environ["MUJOCO_GL"] = "egl"
 
 if "MUJOCO_EGL_DEVICE_ID" in os.environ:
     del os.environ["MUJOCO_EGL_DEVICE_ID"]
-
-
-def _make_replay_buffer(sampling_strategy: str, *, alpha, beta, eps, priority_key, **kwargs):
-    """Build a replay buffer that only needs torchrl's C++ extension for real PER.
-
-    torch 2.14 removed `torch::autograd::deleteNode`, a symbol every released
-    torchrl wheel (through 0.13.3) still links against, so `torchrl._torchrl`
-    fails to load and `PrioritizedSampler`'s segment trees are missing --
-    `NameError: name 'SumSegmentTreeFp32' is not defined`.
-
-    Under `sampling_strategy="uniform"` this file already passes alpha=beta=0
-    and skips every `update_tensordict_priority` call, which is plain uniform
-    sampling, so the non-prioritized buffer is an exact substitute and needs no
-    extension. `prioritized_replay` genuinely needs the segment trees and still
-    requires a torchrl built against the installed torch.
-    """
-    if sampling_strategy == "prioritized_replay":
-        return TensorDictPrioritizedReplayBuffer(
-            alpha=alpha, beta=beta, eps=eps, priority_key=priority_key, **kwargs
-        )
-    return TensorDictReplayBuffer(priority_key=priority_key, **kwargs)
 
 
 def _add_transitions_to_buffer(
@@ -423,8 +397,7 @@ def main(cfg: ResidualTD3DexmgConfig):
         print("Online-only training mode: offline_fraction=0.0")
 
     # Use TensorDictPrioritizedReplayBuffer with optimized prefetching
-    online_rb = _make_replay_buffer(
-        cfg.algo.sampling_strategy,
+    online_rb = TensorDictPrioritizedReplayBuffer(
         storage=LazyTensorStorage(max_size=cfg.algo.buffer_size, device="cpu"),
         alpha=alpha,
         beta=beta,
@@ -520,8 +493,7 @@ def main(cfg: ResidualTD3DexmgConfig):
     else:
         print("Online-only mode: creating minimal offline buffer (unused)")
 
-    offline_rb = _make_replay_buffer(
-        cfg.algo.sampling_strategy,
+    offline_rb = TensorDictPrioritizedReplayBuffer(
         storage=LazyTensorStorage(max_size=max_offline_transitions, device="cpu"),
         alpha=alpha,
         beta=beta,

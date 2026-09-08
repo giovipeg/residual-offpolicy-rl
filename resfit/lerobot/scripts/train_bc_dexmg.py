@@ -103,6 +103,14 @@ parser.add_argument("--steps", type=int, default=100_000, help="Total optimizati
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--grad_clip_norm", type=float, default=10.0)
 parser.add_argument("--num_workers", type=int, default=4)
+parser.add_argument(
+    "--video_backend",
+    type=str,
+    default=None,
+    choices=["torchcodec", "pyav", "video_reader"],
+    help="Video decoder for the LeRobot dataset. Defaults to LeRobot's choice (torchcodec when "
+    "installed); use 'pyav' if libtorchcodec fails to load against the local FFmpeg.",
+)
 
 # Reproducibility / device
 parser.add_argument("--seed", type=int, default=None)
@@ -549,6 +557,7 @@ def main(cfg: argparse.Namespace):
         delta_timestamps=delta_timestamps,
         download_videos=True,
         image_transforms=image_transforms,
+        video_backend=cfg.video_backend,
     )
 
     # ---------------------------------------------------------------------
@@ -692,8 +701,11 @@ def main(cfg: argparse.Namespace):
         mimicgen_envs = [
             "Threading",  # Single-arm threading task from MimicGen
         ]
+        external_envs = [
+            "CubeToContainer",  # Single-arm pick-and-place registered by the `simple_env` package
+        ]
 
-        envs = dexmimicgen_envs + robomimic_envs + mimicgen_envs
+        envs = dexmimicgen_envs + robomimic_envs + mimicgen_envs + external_envs
 
         if cfg.eval_env in envs:
             # Create evaluation environment (vectorized or single based on debug flag)
