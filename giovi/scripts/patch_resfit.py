@@ -18,8 +18,15 @@ can link against, so torchrl's compiled extension never loads and every run
 dies with `NameError: name 'SumSegmentTreeFp32' is not defined` while building
 the replay buffers. See the `_make_replay_buffer` edit below.
 
+It also makes the residual stage *persist* what it trains. Upstream
+`train_residual_td3.py` tracks a best eval success rate and only prints when it
+improves -- it never calls `save_checkpoint`, and it deletes the whole run
+directory on success -- so a finished TD3 run leaves no agent anywhere, on disk
+or on W&B, and there is nothing to roll out afterwards. The three checkpoint
+edits below add the save that `train_rlpd_dexmg.py` already does.
+
 This script applies every edit needed to make `--eval_env CubeToContainer`
-work, plus that fixup, and nothing else. It is idempotent -- rerunning it is a
+work, plus those fixups, and nothing else. It is idempotent -- rerunning it is a
 no-op -- and writes a `.bak` next to each file the first time it changes it.
 
 Environment-level fixes (torchcodec, FFmpeg) live in `patch_residual.py`.
@@ -60,6 +67,73 @@ SINGLE_ARM_SET_NEW = (
     '        if env_lower in {"lift", "can", "pickplacecan", "square", "nutassemblysquare", '
     '"threading", "cubetocontainer"}:'
 )
+
+# Upstream computes the eval success rate, compares it to the best so far, and
+# prints -- the save that should follow is simply absent.
+BEST_BLOCK_OLD = """                # Handle model saving when success rate improves
+                current_success_rate = eval_metrics["eval/success_rate"]
+                if current_success_rate > best_eval_success_rate:
+                    print(f"🎉 New best success rate: {current_success_rate:.4f} (prev: {best_eval_success_rate:.4f})")
+                    best_eval_success_rate = current_success_rate
+"""
+
+BEST_BLOCK_NEW = """                # Handle model saving when success rate improves
+                current_success_rate = eval_metrics["eval/success_rate"]
+
+                # Persist the agent: `last.pt` at every eval, `best.pt` only when
+                # the success rate improves. Best-only saving would leave a smoke
+                # run with nothing on disk -- best_eval_success_rate starts at 0.0
+                # and the comparison is strict, the same trap that stops
+                # train_bc_dexmg from ever logging a `_best` artifact for a run
+                # that scores 0.0.
+                checkpoint_names = ["last.pt"]
+                if current_success_rate > best_eval_success_rate:
+                    checkpoint_names.append("best.pt")
+                for checkpoint_name in checkpoint_names:
+                    checkpoint_path = model_save_dir / checkpoint_name
+                    save_checkpoint(
+                        agent,
+                        checkpoint_path,
+                        global_step,
+                        config=cfg,
+                        success_rate=current_success_rate,
+                    )
+                    if wandb.run is not None:
+                        # base_path keeps these at files/models/<name> on the run.
+                        wandb.save(str(checkpoint_path), base_path=str(run_cache_dir))
+
+                if current_success_rate > best_eval_success_rate:
+                    print(f"🎉 New best success rate: {current_success_rate:.4f} (prev: {best_eval_success_rate:.4f})")
+                    best_eval_success_rate = current_success_rate
+"""
+
+# The run directory is wiped on success, which would take the checkpoints with it.
+CLEANUP_OLD = """    # Clean up entire run directory after successful completion (videos/logs are saved to wandb)
+    if run_cache_dir.exists():
+        print(f"Cleaning up run directory: {run_cache_dir}")
+        shutil.rmtree(run_cache_dir)
+        print("Run directory cleaned up successfully.")
+"""
+
+CLEANUP_NEW = """    # Clean up the run directory after successful completion (videos/logs are on
+    # wandb), but keep saved checkpoints -- they exist nowhere else on disk.
+    if run_cache_dir.exists():
+        checkpoints = sorted(model_save_dir.glob("*.pt")) if model_save_dir.exists() else []
+        if checkpoints:
+            print(f"Cleaning up run directory, keeping {len(checkpoints)} checkpoint(s): {run_cache_dir}")
+            for child in run_cache_dir.iterdir():
+                if child == model_save_dir:
+                    continue
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            print(f"Checkpoints kept in: {model_save_dir}")
+        else:
+            print(f"Cleaning up run directory: {run_cache_dir}")
+            shutil.rmtree(run_cache_dir)
+            print("Run directory cleaned up successfully.")
+"""
 
 
 @dataclass
@@ -224,6 +298,27 @@ EDITS: dict[str, list[Edit]] = {
             anchor="    offline_rb = TensorDictPrioritizedReplayBuffer(\n",
             text="    offline_rb = _make_replay_buffer(\n        cfg.algo.sampling_strategy,\n",
             marker="    offline_rb = _make_replay_buffer(",
+        ),
+        Edit(
+            name="import save_checkpoint",
+            op="insert_after",
+            anchor="from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent\n",
+            text="from resfit.rl_finetuning.utils.checkpoint import save_checkpoint\n",
+            marker="from resfit.rl_finetuning.utils.checkpoint import save_checkpoint",
+        ),
+        Edit(
+            name="save the agent at every eval (last.pt) and on a new best (best.pt)",
+            op="replace",
+            anchor=BEST_BLOCK_OLD,
+            text=BEST_BLOCK_NEW,
+            marker='checkpoint_path = model_save_dir / checkpoint_name',
+        ),
+        Edit(
+            name="keep models/ when the run directory is cleaned up",
+            op="replace",
+            anchor=CLEANUP_OLD,
+            text=CLEANUP_NEW,
+            marker="Cleaning up run directory, keeping",
         ),
     ],
 }

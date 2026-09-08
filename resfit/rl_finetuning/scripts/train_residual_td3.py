@@ -53,6 +53,7 @@ from resfit.lerobot.utils.load_policy import download_policy_from_wandb, load_po
 from resfit.rl_finetuning.config.residual_td3 import ResidualTD3DexmgConfig
 from resfit.rl_finetuning.off_policy.common_utils import utils
 from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
+from resfit.rl_finetuning.utils.checkpoint import save_checkpoint
 from resfit.rl_finetuning.utils.dtype import to_uint8
 from resfit.rl_finetuning.utils.evaluate_dexmg import run_dexmg_evaluation
 from resfit.rl_finetuning.utils.hugging_face import (
@@ -1039,6 +1040,29 @@ def main(cfg: ResidualTD3DexmgConfig):
 
                 # Handle model saving when success rate improves
                 current_success_rate = eval_metrics["eval/success_rate"]
+
+                # Persist the agent: `last.pt` at every eval, `best.pt` only when
+                # the success rate improves. Best-only saving would leave a smoke
+                # run with nothing on disk -- best_eval_success_rate starts at 0.0
+                # and the comparison is strict, the same trap that stops
+                # train_bc_dexmg from ever logging a `_best` artifact for a run
+                # that scores 0.0.
+                checkpoint_names = ["last.pt"]
+                if current_success_rate > best_eval_success_rate:
+                    checkpoint_names.append("best.pt")
+                for checkpoint_name in checkpoint_names:
+                    checkpoint_path = model_save_dir / checkpoint_name
+                    save_checkpoint(
+                        agent,
+                        checkpoint_path,
+                        global_step,
+                        config=cfg,
+                        success_rate=current_success_rate,
+                    )
+                    if wandb.run is not None:
+                        # base_path keeps these at files/models/<name> on the run.
+                        wandb.save(str(checkpoint_path), base_path=str(run_cache_dir))
+
                 if current_success_rate > best_eval_success_rate:
                     print(f"🎉 New best success rate: {current_success_rate:.4f} (prev: {best_eval_success_rate:.4f})")
                     best_eval_success_rate = current_success_rate
@@ -1207,11 +1231,24 @@ def main(cfg: ResidualTD3DexmgConfig):
 
     print(f"Training finished in {time.time() - train_start_time:.2f} seconds.")
 
-    # Clean up entire run directory after successful completion (videos/logs are saved to wandb)
+    # Clean up the run directory after successful completion (videos/logs are on
+    # wandb), but keep saved checkpoints -- they exist nowhere else on disk.
     if run_cache_dir.exists():
-        print(f"Cleaning up run directory: {run_cache_dir}")
-        shutil.rmtree(run_cache_dir)
-        print("Run directory cleaned up successfully.")
+        checkpoints = sorted(model_save_dir.glob("*.pt")) if model_save_dir.exists() else []
+        if checkpoints:
+            print(f"Cleaning up run directory, keeping {len(checkpoints)} checkpoint(s): {run_cache_dir}")
+            for child in run_cache_dir.iterdir():
+                if child == model_save_dir:
+                    continue
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            print(f"Checkpoints kept in: {model_save_dir}")
+        else:
+            print(f"Cleaning up run directory: {run_cache_dir}")
+            shutil.rmtree(run_cache_dir)
+            print("Run directory cleaned up successfully.")
 
 
 # -----------------------------------------------------------------------------
