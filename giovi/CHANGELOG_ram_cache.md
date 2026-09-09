@@ -69,8 +69,11 @@ python giovi/scripts/patch_resfit.py --revert
 
 * `--cache_in_ram` added to `ARGS` (on by default for this run).
 * `--num_workers` is **derived from `os.cpu_count()`**, not hard-coded, since it is the
-  one setting that does not transfer between machines. A `--num_workers N` passed on the
-  command line still wins (it lands after `ARGS`, and argparse takes the last value).
+  one setting that does not transfer between machines.
+* Flags you override are now dropped from `ARGS` (`drop_overridden`), so the printed
+  command shows `--num_workers 8` once instead of `--num_workers 12 --num_workers 8`.
+  This is cosmetic: argparse took the last occurrence before, so the override already
+  won -- it just was not obvious which value applied.
 
 ### Added: `giovi/scripts/tune_num_workers.py`
 

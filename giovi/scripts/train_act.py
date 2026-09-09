@@ -60,12 +60,35 @@ ARGS = [
 ]
 
 # Worker count is the one setting that does not transfer between machines, so
-# derive it rather than baking in a number: leave a couple of cores for the
-# main process and the eval envs. Override with `--num_workers N` -- worth
-# tuning once on the training server, since too many workers oversubscribes the
-# decode/collate threads and gets *slower*.
+# derive it rather than baking in a number: leave a few cores for the main
+# process and the eval envs. Override with `--num_workers N` -- worth tuning
+# once on the training server with `tune_num_workers.py`, since too many
+# workers oversubscribes the decode/collate threads and gets *slower*.
 _cpus = os.cpu_count() or 4
 ARGS += ["--num_workers", str(max(2, min(16, _cpus - 4)))]
+
+
+def drop_overridden(base: list[str], extra: list[str]) -> list[str]:
+    """Remove flags from `base` that the caller also passed in `extra`.
+
+    argparse takes the last occurrence, so the override already won without
+    this; dropping the default just keeps the printed command readable rather
+    than showing `--num_workers 12 --num_workers 8` and leaving the reader to
+    work out which one applies.
+    """
+    overridden = {a.split("=", 1)[0] for a in extra if a.startswith("--")}
+    kept: list[str] = []
+    i = 0
+    while i < len(base):
+        # A flag owns every following token until the next `--flag`, which
+        # covers both `--steps 200000` and bare switches like `--wandb_enable`.
+        j = i + 1
+        while j < len(base) and not base[j].startswith("--"):
+            j += 1
+        if base[i] not in overridden:
+            kept.extend(base[i:j])
+        i = j
+    return kept
 
 
 def main() -> int:
@@ -76,7 +99,7 @@ def main() -> int:
     # position, without a `--` separator.
     args, extra = ap.parse_known_args()
 
-    return _launch.run(TRAINER, [*ARGS, *extra], dry_run=args.dry_run)
+    return _launch.run(TRAINER, [*drop_overridden(ARGS, extra), *extra], dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
