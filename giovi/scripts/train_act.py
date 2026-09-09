@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import _launch
@@ -50,7 +51,21 @@ ARGS = [
     "--eval_num_envs", "16",
     "--eval_num_episodes", "100",
     "--wandb_enable",
+    # BC training on this dataset is dataloader-bound, not GPU-bound: stock
+    # LeRobot decodes an mp4 frame per camera on every __getitem__, so a 200k
+    # step run at batch 256 decodes ~100M frames out of a dataset that is only
+    # 705 MiB once decoded. `--cache_in_ram` decodes it once into shared memory
+    # instead and serves bit-identical items (giovi/ram_cache.py).
+    "--cache_in_ram",
 ]
+
+# Worker count is the one setting that does not transfer between machines, so
+# derive it rather than baking in a number: leave a couple of cores for the
+# main process and the eval envs. Override with `--num_workers N` -- worth
+# tuning once on the training server, since too many workers oversubscribes the
+# decode/collate threads and gets *slower*.
+_cpus = os.cpu_count() or 4
+ARGS += ["--num_workers", str(max(2, min(16, _cpus - 4)))]
 
 
 def main() -> int:

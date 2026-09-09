@@ -25,6 +25,12 @@ directory on success -- so a finished TD3 run leaves no agent anywhere, on disk
 or on W&B, and there is nothing to roll out afterwards. The three checkpoint
 edits below add the save that `train_rlpd_dexmg.py` already does.
 
+It also adds a `--cache_in_ram` flag to `train_bc_dexmg.py`. BC training on a
+small dataset is dataloader-bound, not GPU-bound: LeRobot re-decodes an mp4
+frame per camera on every `__getitem__`, which for cube-to-container is ~92% of
+each training step. The flag swaps in `giovi/ram_cache.py`, which decodes the
+whole dataset once into shared memory and serves bit-identical items.
+
 This script applies every edit needed to make `--eval_env CubeToContainer`
 work, plus those fixups, and nothing else. It is idempotent -- rerunning it is a
 no-op -- and writes a `.bak` next to each file the first time it changes it.
@@ -243,6 +249,32 @@ EDITS: dict[str, list[Edit]] = {
             op="insert_after",
             anchor="        download_videos=True,\n        image_transforms=image_transforms,\n",
             text="        video_backend=cfg.video_backend,\n",
+        ),
+        Edit(
+            name="--cache_in_ram flag",
+            op="insert_after",
+            anchor='parser.add_argument("--num_workers", type=int, default=4)\n',
+            text="parser.add_argument(\n"
+            '    "--cache_in_ram",\n'
+            '    action="store_true",\n'
+            '    help="Decode every video into shared RAM once at startup instead of decoding "\n'
+            '    "frames on every __getitem__. Removes the dominant training bottleneck for "\n'
+            '    "datasets that fit in memory; see giovi/ram_cache.py.",\n'
+            ")\n",
+            marker='"--cache_in_ram",',
+        ),
+        Edit(
+            name="RAM-cached dataset class",
+            op="replace",
+            anchor="    dataset = LeRobotDataset(\n",
+            text="    dataset_cls = LeRobotDataset\n"
+            "    if cfg.cache_in_ram:\n"
+            "        from giovi.ram_cache import RamCachedLeRobotDataset  # noqa: PLC0415\n"
+            "\n"
+            "        dataset_cls = RamCachedLeRobotDataset\n"
+            "\n"
+            "    dataset = dataset_cls(\n",
+            marker="dataset_cls = RamCachedLeRobotDataset",
         ),
     ],
     "resfit/rl_finetuning/scripts/train_residual_td3.py": [

@@ -104,13 +104,6 @@ parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--grad_clip_norm", type=float, default=10.0)
 parser.add_argument("--num_workers", type=int, default=4)
 parser.add_argument(
-    "--cache_in_ram",
-    action="store_true",
-    help="Decode every video into shared RAM once at startup instead of decoding "
-    "frames on every __getitem__. Removes the dominant training bottleneck for "
-    "datasets that fit in memory; see giovi/ram_cache.py.",
-)
-parser.add_argument(
     "--video_backend",
     type=str,
     default=None,
@@ -559,13 +552,7 @@ def main(cfg: argparse.Namespace):
     image_transforms_config = ImageTransformsConfig(enable=True)
     image_transforms = ImageTransforms(image_transforms_config)
 
-    dataset_cls = LeRobotDataset
-    if cfg.cache_in_ram:
-        from giovi.ram_cache import RamCachedLeRobotDataset  # noqa: PLC0415
-
-        dataset_cls = RamCachedLeRobotDataset
-
-    dataset = dataset_cls(
+    dataset = LeRobotDataset(
         cfg.dataset,
         delta_timestamps=delta_timestamps,
         download_videos=True,

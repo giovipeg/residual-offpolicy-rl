@@ -25,8 +25,11 @@ def trainer_env() -> dict[str, str]:
     env = os.environ.copy()
     # Offscreen MuJoCo rendering for the eval rollouts.
     env["MUJOCO_GL"] = "egl"
-    # `import simple_env` (registers the CubeToContainer robosuite task) must resolve.
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(SIMPLE_ENV_ROOT), env.get("PYTHONPATH", "")]))
+    # `import simple_env` (registers the CubeToContainer robosuite task) and
+    # `import giovi.ram_cache` (the --cache_in_ram dataset) must both resolve.
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(SIMPLE_ENV_ROOT), str(REPO_ROOT), env.get("PYTHONPATH", "")])
+    )
     return env
 
 
