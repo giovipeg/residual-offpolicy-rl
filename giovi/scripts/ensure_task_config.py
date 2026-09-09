@@ -194,6 +194,51 @@ def write(target: Path, source: str) -> None:
     target.write_text(source)
 
 
+def ensure(
+    task: str,
+    *,
+    base_policy: str | None = None,
+    tasks_file: Path = DEFAULT_TASKS_FILE,
+    resfit_root: Path = DEFAULT_RESFIT_ROOT,
+) -> str:
+    """Generate the task's config class if missing, point it at `base_policy`.
+
+    Returns the Hydra `--config-name` for the task, so callers do not have to
+    spell it out a second time. This is what `smoke_train_td3.py` imports;
+    `main()` is the same thing behind a CLI.
+    """
+    tasks_file, resfit_root = tasks_file.expanduser(), resfit_root.expanduser()
+    tasks = load_tasks(tasks_file)
+    if task not in tasks:
+        sys.exit(f"task '{task}' is not in {tasks_file}. Known: {', '.join(tasks) or 'none'}")
+
+    spec = tasks[task]
+    cls = class_name(task)
+
+    target = resfit_root / CONFIG_REL
+    if not target.exists():
+        sys.exit(f"not found: {target}\nIs the ResFiT root really a ResFiT checkout?")
+    source = original = target.read_text()
+
+    if find_class_block(source, cls) is None:
+        source = insert_class(source, task, spec, tasks_file)
+        print(f"+ {cls} generated from {tasks_file}")
+    else:
+        print(f"= {cls} already present")
+
+    if base_policy:
+        source = set_base_policy(source, cls, base_policy)
+        print(f"  base policy: {base_policy}")
+
+    if source == original:
+        print(f"= {CONFIG_REL} unchanged")
+    else:
+        write(target, source)
+        print(f"patched {CONFIG_REL}")
+
+    return config_name(task)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("task", nargs="?", help="task name, as keyed in the task table (e.g. CubeToContainer)")
@@ -231,7 +276,7 @@ def main() -> int:
     target = args.resfit_root.expanduser() / CONFIG_REL
     if not target.exists():
         sys.exit(f"not found: {target}\nIs --resfit-root really a ResFiT checkout?")
-    source = original = target.read_text()
+    source = target.read_text()
 
     exists = find_class_block(source, cls) is not None
 
@@ -242,22 +287,13 @@ def main() -> int:
         print(f"  --config-name={config_name(args.task)}")
         return 0 if exists else 1
 
-    if not exists:
-        source = insert_class(source, args.task, spec, args.tasks_file.expanduser())
-        print(f"+ {cls} generated from {args.tasks_file}")
-    else:
-        print(f"= {cls} already present")
-
-    if args.base_policy:
-        source = set_base_policy(source, cls, args.base_policy)
-        print(f"  base policy: {args.base_policy}")
-
-    if source == original:
-        print(f"= {CONFIG_REL} unchanged")
-        return 0
-
-    write(target, source)
-    print(f"patched {CONFIG_REL}  (--config-name={config_name(args.task)})")
+    name = ensure(
+        args.task,
+        base_policy=args.base_policy,
+        tasks_file=args.tasks_file,
+        resfit_root=args.resfit_root,
+    )
+    print(f"  --config-name={name}")
     return 0
 
 
