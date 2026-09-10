@@ -45,6 +45,7 @@ TASK = "CubeToContainer"
 # The README's "Residual RL training" command, verbatim apart from the two
 # task-specific flags noted in the module docstring.
 OVERRIDES = [
+    "base_policy.wt_type=latest",
     "algo.prefetch_batches=4",
     "algo.n_step=5",
     "algo.gamma=0.995",
