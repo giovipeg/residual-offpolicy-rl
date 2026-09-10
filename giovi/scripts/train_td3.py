@@ -25,6 +25,9 @@ Usage:
     python giovi/scripts/train_td3.py dexmg-bc/<run_id>
     python giovi/scripts/train_td3.py dexmg-bc/<run_id> --dry-run
     python giovi/scripts/train_td3.py dexmg-bc/<run_id> algo.total_timesteps=500_000
+
+For bc policies with a low num_steps use:
+python giovi/scripts/train_td3.py dexmg-bc/09anv9tx base_policy.wt_type=latest
 """
 
 from __future__ import annotations
