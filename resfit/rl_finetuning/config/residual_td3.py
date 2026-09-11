@@ -292,12 +292,50 @@ class ResidualTD3CubeToContainerConfig(ResidualTD3DexmgConfig):
 
     base_policy: BasePolicyConfig = field(
         default_factory=lambda: BasePolicyConfig(
-            wandb_id="dexmg-bc/fnqe3s6y",
+            wandb_id="dexmg-bc/09anv9tx",
         )
     )
 
     wandb: WandBConfig = field(
         default_factory=lambda: WandBConfig(project="cube-to-container-residual-td3")
+    )
+
+
+@dataclass
+class ResidualTD3CubeToContainerG1Config(ResidualTD3DexmgConfig):
+    """Bimanual Unitree G1 + Inspire hands pick-and-place, registered by the `simple_env` package.
+
+    Generated from giovi/configs/residual_td3_tasks.json by giovi/scripts/ensure_task_config.py --
+    edit the task table and rerun rather than editing this class.
+    """
+
+    task: str = "CubeToContainerG1"
+
+    video_key: str = "observation.images.agentview"
+
+    rl_camera: list[str] = field(
+        default_factory=lambda: [
+            "observation.images.agentview",
+            "observation.images.robot0_eye_in_left_hand",
+            "observation.images.robot0_eye_in_right_hand",
+        ]
+    )
+
+    offline_data: OfflineDataConfig = field(
+        default_factory=lambda: OfflineDataConfig(
+            name="giovipeg/cube-to-container-g1",
+            num_episodes=200,
+        )
+    )
+
+    base_policy: BasePolicyConfig = field(
+        default_factory=lambda: BasePolicyConfig(
+            wandb_id="TODO",
+        )
+    )
+
+    wandb: WandBConfig = field(
+        default_factory=lambda: WandBConfig(project="cube-to-container-g1-residual-td3")
     )
 
 
@@ -312,3 +350,4 @@ cs.store(name="residual_td3_box_clean_config", node=ResidualTD3BoxCleanConfig)
 cs.store(name="residual_td3_coffee_config", node=ResidualTD3CoffeeConfig)
 cs.store(name="residual_td3_two_arm_cansort_config", node=ResidualTD3TwoArmCanSortConfig)
 cs.store(name="residual_td3_cube_to_container_config", node=ResidualTD3CubeToContainerConfig)
+cs.store(name="residual_td3_cube_to_container_g1_config", node=ResidualTD3CubeToContainerG1Config)

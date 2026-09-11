@@ -58,8 +58,6 @@ ENV_ROBOTS = {
     # ------------------------------------------------------------------
     # Cube-to-container pick-and-place -- single Panda arm, from `simple_env`
     "CubeToContainer": ["Panda"],
-    # Same task on a bimanual Unitree G1 with Inspire hands, from `simple_env`
-    "CubeToContainerG1": ["G1Inspire"],
 }
 # Create a named logger
 logger = logging.getLogger(__name__)
@@ -148,7 +146,6 @@ class RobosuiteGymWrapper:
             "TwoArmThreading": 300,
             "TwoArmCanSortRandom": 400,
             "CubeToContainer": 220,
-            "CubeToContainerG1": 250,
         }.get(env_name, 1000)
 
         # Add Gymnasium-required attributes
@@ -180,10 +177,6 @@ class RobosuiteGymWrapper:
         if env_name == "CubeToContainer":
             import simple_env  # noqa: F401, PLC0415  (registers CubeToContainer)
 
-        if env_name == "CubeToContainerG1":
-            import simple_env.robots  # noqa: F401, PLC0415  (registers G1Inspire)
-            import simple_env.cube_to_container_g1  # noqa: F401, PLC0415  (registers CubeToContainerG1)
-
         robots = ENV_ROBOTS[env_name]
 
         # Get expected image keys for this environment (same as dataset conversion)
@@ -212,13 +205,6 @@ class RobosuiteGymWrapper:
         }
 
         os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.render_gpu_device_id)
-
-        if env_name == "CubeToContainerG1":
-            from simple_env.robots.g1_inspire import (  # noqa: PLC0415
-                controller_config as _g1_controller_config,
-            )
-
-            env_kwargs["controller_configs"] = _g1_controller_config()
 
         # Only log once per vectorized group (env_id==0) and at DEBUG level
         if self.env_id == 0:
@@ -452,7 +438,7 @@ class RobosuiteGymWrapper:
         # Humanoid variants -------------------------------------------------
         if "cansort" in env_lower:
             return humanoid_can_sort_image_keys
-        if any(task in env_lower for task in ["pouring", "coffee", "cubetocontainerg1"]):
+        if any(task in env_lower for task in ["pouring", "coffee"]):
             return humanoid_image_keys
 
         # Single-arm Panda tasks (Lift, Can, Square, Threading, etc.) --------
@@ -490,7 +476,7 @@ class RobosuiteGymWrapper:
         env_lower = env_name.lower()
 
         # Humanoid variants
-        if any(task in env_lower for task in ["pouring", "coffee", "cansort", "cubetocontainerg1"]):
+        if any(task in env_lower for task in ["pouring", "coffee", "cansort"]):
             return humanoid_low_dim_keys
 
         # Single-arm Panda tasks

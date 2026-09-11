@@ -12,7 +12,12 @@
     "Every field except `dataset` is optional; anything omitted keeps the",
     "ResidualTD3DexmgConfig default. `base_policy` is deliberately absent -- the",
     "wandb_project/run_id of the BC run is written into the generated class by",
-    "the launch script, per the README."
+    "the launch script, per the README.",
+    "",
+    "`num_episodes` sizes the offline replay buffer (horizon * num_episodes) and caps",
+    "how many episodes are loaded, so keep it at the count the dataset actually has.",
+    "CubeToContainerG1 is set for the planned 200-episode collection; the Hub copy is",
+    "still at 97, so lower it or re-collect before a real run."
   ],
 
   "CubeToContainer": {
@@ -24,6 +29,19 @@
     "rl_camera": [
       "observation.images.agentview",
       "observation.images.robot0_eye_in_hand"
+    ]
+  },
+
+  "CubeToContainerG1": {
+    "description": "Bimanual Unitree G1 + Inspire hands pick-and-place, registered by the `simple_env` package.",
+    "dataset": "giovipeg/cube-to-container-g1",
+    "num_episodes": 200,
+    "wandb_project": "cube-to-container-g1-residual-td3",
+    "video_key": "observation.images.agentview",
+    "rl_camera": [
+      "observation.images.agentview",
+      "observation.images.robot0_eye_in_left_hand",
+      "observation.images.robot0_eye_in_right_hand"
     ]
   }
 }

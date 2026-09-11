@@ -716,6 +716,7 @@ def main(cfg: argparse.Namespace):
         ]
         external_envs = [
             "CubeToContainer",  # Single-arm pick-and-place registered by the `simple_env` package
+            "CubeToContainerG1",  # Bimanual G1 + Inspire hands, also from `simple_env`
         ]
 
         envs = dexmimicgen_envs + robomimic_envs + mimicgen_envs + external_envs

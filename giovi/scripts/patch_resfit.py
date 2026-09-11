@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch a ResFiT checkout: register `CubeToContainer`, and unbreak replay buffers.
+"""Patch a ResFiT checkout: register the `CubeToContainer` tasks, and unbreak replay buffers.
 
 ResFiT hard-codes its task table in two places, and neither is extensible from
 the outside:
@@ -31,9 +31,17 @@ frame per camera on every `__getitem__`, which for cube-to-container is ~92% of
 each training step. The flag swaps in `giovi/ram_cache.py`, which decodes the
 whole dataset once into shared memory and serves bit-identical items.
 
-This script applies every edit needed to make `--eval_env CubeToContainer`
-work, plus those fixups, and nothing else. It is idempotent -- rerunning it is a
-no-op -- and writes a `.bak` next to each file the first time it changes it.
+This script applies every edit needed to make `--eval_env CubeToContainer` and
+`--eval_env CubeToContainerG1` work, plus those fixups, and nothing else. It is
+idempotent -- rerunning it is a no-op -- and writes a `.bak` next to each file
+the first time it changes it.
+
+The two tasks are the same scene on different robots (Panda vs. a bimanual
+Unitree G1 with Inspire hands) and need separate registrations, because the
+observation and action schemas differ: 7-D/9-D and two cameras for the Panda,
+24-D/38-D and three cameras for the G1. The G1 also needs its own composite
+controller config, which is the one edit here with no Panda counterpart -- see
+the `G1 composite controller config` edit for why omitting it fails silently.
 
 Environment-level fixes (torchcodec, FFmpeg) live in `patch_residual.py`.
 
@@ -58,6 +66,15 @@ from pathlib import Path
 ENV_NAME = "CubeToContainer"
 HORIZON = 220
 
+# The G1 variant is a *separate* ResFiT task, not a second dataset for the one
+# above: `CubeToContainerG1` runs a bimanual Unitree G1 with Inspire hands, so
+# the action is 24-D (not 7), the state 38-D (not 9), and there are three
+# cameras (not two). Every edit below is therefore paired -- the Panda one, then
+# the G1 one -- and the G1 edits anchor on the Panda ones, so they must stay in
+# this order within each file's list.
+G1_ENV_NAME = "CubeToContainerG1"
+G1_HORIZON = 250
+
 # giovi/scripts/patch_resfit.py -> the ResFiT repo root.
 DEFAULT_RESFIT_ROOT = Path(__file__).resolve().parents[2]
 # The checkout that provides `import simple_env`; only used for the hint printed
@@ -72,6 +89,26 @@ SINGLE_ARM_SET_OLD = (
 SINGLE_ARM_SET_NEW = (
     '        if env_lower in {"lift", "can", "pickplacecan", "square", "nutassemblysquare", '
     '"threading", "cubetocontainer"}:'
+)
+
+# The G1 needs the opposite treatment: its observation contract is ResFiT's
+# *humanoid* (GR1) one -- `agentview` + both in-hand cameras, and right/left
+# eef_pos/eef_quat/gripper_qpos, which is exactly the 3+4+12+3+4+12 = 38 the
+# dataset stores. Those two branches gate on a *substring* test rather than the
+# set-membership one above, and they are checked first, so adding the name here
+# is enough. Note the two lists differ (`cansort` has its own camera set), hence
+# two edits rather than one applied twice.
+#
+# Getting this wrong is silent: with the name in neither list, "cubetocontainerg1"
+# fails the single-arm test too (that one is exact membership, so the Panda
+# "cubetocontainer" does not match it) and falls through to the *two-arm Panda*
+# fallback -- `robot1_*` keys that this robot does not have.
+HUMANOID_IMAGE_SET_OLD = '        if any(task in env_lower for task in ["pouring", "coffee"]):'
+HUMANOID_IMAGE_SET_NEW = '        if any(task in env_lower for task in ["pouring", "coffee", "cubetocontainerg1"]):'
+
+HUMANOID_LOW_DIM_SET_OLD = '        if any(task in env_lower for task in ["pouring", "coffee", "cansort"]):'
+HUMANOID_LOW_DIM_SET_NEW = (
+    '        if any(task in env_lower for task in ["pouring", "coffee", "cansort", "cubetocontainerg1"]):'
 )
 
 # Upstream computes the eval success rate, compares it to the best so far, and
@@ -190,10 +227,24 @@ EDITS: dict[str, list[Edit]] = {
             marker=f'    "{ENV_NAME}": ["Panda"],',
         ),
         Edit(
+            name="G1 ENV_ROBOTS entry",
+            op="insert_after",
+            anchor=f'    "{ENV_NAME}": ["Panda"],\n',
+            text=f"    # Same task on a bimanual Unitree G1 with Inspire hands, from `simple_env`\n"
+            f'    "{G1_ENV_NAME}": ["G1Inspire"],\n',
+            marker=f'    "{G1_ENV_NAME}": ["G1Inspire"],',
+        ),
+        Edit(
             name="episode horizon",
             op="insert_after",
             anchor='            "TwoArmCanSortRandom": 400,\n',
             text=f'            "{ENV_NAME}": {HORIZON},\n',
+        ),
+        Edit(
+            name="G1 episode horizon",
+            op="insert_after",
+            anchor=f'            "{ENV_NAME}": {HORIZON},\n',
+            text=f'            "{G1_ENV_NAME}": {G1_HORIZON},\n',
         ),
         Edit(
             name="env module import",
@@ -203,12 +254,60 @@ EDITS: dict[str, list[Edit]] = {
             f"            import simple_env  # noqa: F401, PLC0415  (registers {ENV_NAME})\n",
         ),
         Edit(
+            name="G1 env module import",
+            op="insert_after",
+            anchor=f'        if env_name == "{ENV_NAME}":\n'
+            f"            import simple_env  # noqa: F401, PLC0415  (registers {ENV_NAME})\n",
+            # `simple_env/__init__.py` exports only the Panda task, so the robot
+            # and the task have to be imported by module rather than via the
+            # package -- which also keeps this change inside the ResFiT checkout.
+            text=f'\n        if env_name == "{G1_ENV_NAME}":\n'
+            f"            import simple_env.robots  # noqa: F401, PLC0415  (registers G1Inspire)\n"
+            f"            import simple_env.cube_to_container_g1  # noqa: F401, PLC0415  (registers {G1_ENV_NAME})\n",
+        ),
+        Edit(
             name="image + low-dim keys (single-arm Panda contract, 2 sites)",
             op="replace",
             anchor=SINGLE_ARM_SET_OLD,
             text=SINGLE_ARM_SET_NEW,
             occurrences=2,
             marker='"threading", "cubetocontainer"}',
+        ),
+        Edit(
+            name="G1 image keys (humanoid contract)",
+            op="replace",
+            anchor=HUMANOID_IMAGE_SET_OLD,
+            text=HUMANOID_IMAGE_SET_NEW,
+            marker='"coffee", "cubetocontainerg1"]',
+        ),
+        Edit(
+            name="G1 low-dim keys (humanoid contract)",
+            op="replace",
+            anchor=HUMANOID_LOW_DIM_SET_OLD,
+            text=HUMANOID_LOW_DIM_SET_NEW,
+            marker='"cansort", "cubetocontainerg1"]',
+        ),
+        Edit(
+            name="G1 composite controller config",
+            op="insert_after",
+            anchor='        os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.render_gpu_device_id)\n',
+            # Must land before `robosuite.make(**env_kwargs)` *and* before the
+            # `composite_controller_specific_configs` mutation below it.
+            #
+            # `load_composite_controller_config(robot="G1Inspire")` searches only
+            # robosuite's own package, finds no config for this robot, and falls
+            # back to basic.json -- whose Panda-tuned kp=150 cannot converge the
+            # Inspire hand's ~0.12 m grip-site lever arm. The dataset was
+            # collected at kp=350 with this exact config, so the rollout has to
+            # use it too or the base policy is being evaluated on a different
+            # robot than it was trained on.
+            text=f'\n        if env_name == "{G1_ENV_NAME}":\n'
+            "            from simple_env.robots.g1_inspire import (  # noqa: PLC0415\n"
+            "                controller_config as _g1_controller_config,\n"
+            "            )\n"
+            "\n"
+            '            env_kwargs["controller_configs"] = _g1_controller_config()\n',
+            marker="_g1_controller_config()",
         ),
     ],
     "resfit/lerobot/scripts/train_bc_dexmg.py": [
@@ -229,6 +328,13 @@ EDITS: dict[str, list[Edit]] = {
             "\n"
             "        envs = dexmimicgen_envs + robomimic_envs + mimicgen_envs + external_envs\n",
             marker="envs = dexmimicgen_envs + robomimic_envs + mimicgen_envs + external_envs",
+        ),
+        Edit(
+            name="G1 --eval_env allow-list",
+            op="insert_after",
+            anchor=f'            "{ENV_NAME}",  # Single-arm pick-and-place registered by the `simple_env` package\n',
+            text=f'            "{G1_ENV_NAME}",  # Bimanual G1 + Inspire hands, also from `simple_env`\n',
+            marker=f'            "{G1_ENV_NAME}",',
         ),
         Edit(
             name="--video_backend flag",
@@ -440,7 +546,7 @@ def do_apply(root: Path, simple_env_root: Path) -> int:
 
     hint = simple_env_root if simple_env_root.exists() else Path("/path/to/simple_robosuite_env")
     print(
-        f"\n{ENV_NAME} is now a ResFiT task. Put the simple_robosuite_env checkout on "
+        f"\n{ENV_NAME} and {G1_ENV_NAME} are now ResFiT tasks. Put the simple_robosuite_env checkout on "
         "PYTHONPATH so `import simple_env` resolves, and use EGL for the offscreen "
         "rollout renders:\n"
         f"  export PYTHONPATH={hint}:$PYTHONPATH\n"
